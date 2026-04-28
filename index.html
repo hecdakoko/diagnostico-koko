@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>KOKO — Diagnóstico de Mentoria</title>
+<link rel="stylesheet" href="colors_and_type.css" />
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--koko-creme, #FFF9D5);
+  color: var(--koko-preto, #0A0A0A);
+  font-family: var(--font-body, 'IBM Plex Sans', sans-serif);
+  min-height: 100vh;
+}
+::selection { background: #ED028A; color: #FFF9D5; }
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: #FFF9D5; }
+::-webkit-scrollbar-thumb { background: #0A0A0A; }
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; }
+  @page { size: A4 landscape; margin: 12mm; }
+}
+@keyframes cardReveal {
+  0% { transform: scaleX(0); opacity: 0; }
+  50% { transform: scaleX(0.05); opacity: 0.5; }
+  100% { transform: scaleX(1); opacity: 1; }
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="components/cards-data.jsx"></script>
+<script type="text/babel" src="components/cards-artwork.jsx"></script>
+<script type="text/babel" src="components/cards-ui-v2.jsx"></script>
+<script type="text/babel" src="components/swot-matrix.jsx"></script>
+<script type="text/babel" src="components/claude-integration.jsx"></script>
+<script type="text/babel" src="components/supabase-integration.jsx"></script>
+
+<script type="text/babel">
+const { useState, useCallback, useEffect } = React;
+
+/* ── URL encoding/decoding for shareable links ── */
+function encodeDiagnosis(diagnosis) {
+  const data = {
+    a: diagnosis.agencia,
+    n: diagnosis.nome,
+    c: diagnosis.cards.map(c => c.level),
+    r: diagnosis.resumo || '',
+  };
+  return btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+}
+
+function decodeDiagnosis(encoded) {
+  try {
+    const json = decodeURIComponent(escape(atob(encoded)));
+    const data = JSON.parse(json);
+    return {
+      agencia: data.a,
+      nome: data.n,
+      data: new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase(),
+      cards: data.c.map((level, i) => ({ dimIndex: i, level })),
+      resumo: data.r || '',
+    };
+  } catch { return null; }
+}
+
+function getShareableLink(diagnosis) {
+  const encoded = encodeDiagnosis(diagnosis);
+  const base = window.location.href.split('?')[0].split('#')[0];
+  return `${base}?d=${encoded}`;
+}
+
+/* ── Copy Link Button ── */
+function ShareLinkButton({ diagnosis }) {
+  const [copied, setCopied] = useState(false);
+  const link = getShareableLink(diagnosis);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(link).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    });
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+      <button onClick={handleCopy} style={{
+        display: 'inline-flex', alignItems: 'center', gap: 8,
+        background: copied ? '#42A947' : '#0A0A0A', color: '#FFF9D5',
+        border: '4px solid #0A0A0A',
+        boxShadow: '4px 4px 0 #ED028A',
+        padding: '12px 24px', cursor: 'pointer',
+        fontFamily: "var(--font-display, 'Bebas Neue', sans-serif)",
+        fontSize: 24, textTransform: 'uppercase',
+        transition: 'all 0.2s',
+      }}
+        className="no-print"
+        onMouseEnter={e => e.currentTarget.style.transform = 'translate(-2px,-2px)'}
+        onMouseLeave={e => e.currentTarget.style.transform = 'translate(0,0)'}
+      >
+        {copied ? 'LINK COPIADO!' : 'COPIAR LINK DO DIAGNÓSTICO'}
+      </button>
+      <div style={{
+        maxWidth: 500, width: '100%',
+        background: '#0A0A0A', padding: '8px 12px',
+        wordBreak: 'break-all',
+      }} className="no-print">
+        <span style={{
+          fontFamily: "var(--font-pixel, 'Silkscreen', monospace)",
+          fontSize: 8, color: '#FFF9D5', opacity: 0.5,
+        }}>{link}</span>
+      </div>
+    </div>
+  );
+}
+
+/* ── PDF still available as secondary option ── */
+function DownloadPDFButton() {
+  return (
+    <button onClick={() => window.print()} style={{
+      display: 'inline-flex', alignItems: 'center', gap: 8,
+      background: '#FFF9D5', color: '#0A0A0A',
+      border: '3px solid #0A0A0A',
+      boxShadow: '3px 3px 0 #0A0A0A',
+      padding: '8px 16px', cursor: 'pointer',
+      fontFamily: "var(--font-body, 'IBM Plex Sans', sans-serif)",
+      fontSize: 13, fontWeight: 700, textTransform: 'uppercase',
+      transition: 'transform 0.15s',
+    }}
+      className="no-print"
+      onMouseEnter={e => e.currentTarget.style.transform = 'translate(-2px,-2px)'}
+      onMouseLeave={e => e.currentTarget.style.transform = 'translate(0,0)'}
+    >
+      OU SALVAR COMO PDF
+    </button>
+  );
+}
+
+/* ── Main App ── */
+function App() {
+  const [selectedCard, setSelectedCard] = useState(null);
+  const [revealed, setRevealed] = useState(false);
+  const [diagnosis, setDiagnosis] = useState(null);
+  const [screen, setScreen] = useState('source');
+  const [selectedFormData, setSelectedFormData] = useState(null);
+
+  /* Check URL for shared diagnosis on load */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const encoded = params.get('d');
+    if (encoded) {
+      const diag = decodeDiagnosis(encoded);
+      if (diag) {
+        setDiagnosis(diag);
+        setRevealed(false);
+        setScreen('result');
+      }
+    }
+  }, []);
+
+  const handleReveal = useCallback(() => setRevealed(true), []);
+
+  /* When a Supabase record is selected */
+  const handleSelectRecord = useCallback((record) => {
+    setSelectedFormData(record.form_data || record);
+    setScreen('generate');
+  }, []);
+
+  /* When AI diagnosis is ready */
+  const handleDiagnosisReady = useCallback((diag) => {
+    setDiagnosis(diag);
+    setRevealed(false);
+    setScreen('result');
+  }, []);
+
+  /* Reset */
+  const handleReset = useCallback(() => {
+    setDiagnosis(null);
+    setRevealed(false);
+    setSelectedFormData(null);
+    setScreen('source');
+  }, []);
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      {/* ── Header ── */}
+      <header style={{
+        padding: '12px 24px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        borderBottom: '4px solid #0A0A0A',
+        background: '#0A0A0A',
+      }} className="no-print">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <img src="assets/KOKO-WHITE.png" alt="KOKO" style={{ height: 28 }} />
+          <span style={{
+            fontFamily: "var(--font-pixel, 'Silkscreen', monospace)",
+            fontSize: 10, color: '#FFF9D5', opacity: 0.6,
+            textTransform: 'uppercase', letterSpacing: '0.08em',
+          }}>MENTORIA PARA AGÊNCIAS</span>
+        </div>
+        <span style={{
+          fontFamily: "var(--font-pixel, 'Silkscreen', monospace)",
+          fontSize: 10, color: '#FFF9D5', opacity: 0.5,
+        }}>{diagnosis ? diagnosis.data : new Date().toLocaleDateString('pt-BR').toUpperCase()}</span>
+      </header>
+
+      {/* ═══ SCREEN: Source Selection ═══ */}
+      {screen === 'source' && (
+        <section style={{
+          padding: '48px 32px',
+          maxWidth: 1200, margin: '0 auto', width: '100%',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 32,
+        }}>
+          <div style={{ textAlign: 'center' }}>
+            <h1 style={{
+              fontFamily: "var(--font-display, 'Bebas Neue', sans-serif)",
+              fontSize: 'clamp(36px, 6vw, 72px)',
+              lineHeight: 0.9, color: '#0A0A0A',
+            }}>DIAGNÓSTICO DE MENTORIA</h1>
+            <p style={{
+              fontFamily: "var(--font-body, 'IBM Plex Sans', sans-serif)",
+              fontSize: 15, color: '#0A0A0A', opacity: 0.6, marginTop: 10,
+            }}>Selecione um formulário do Supabase ou use dados de exemplo.</p>
+          </div>
+
+          {/* Supabase panel */}
+          <SupabasePanel onSelectRecord={handleSelectRecord} />
+
+          {/* Or skip to manual */}
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
+            <button onClick={() => setScreen('generate')} style={{
+              background: '#FFF9D5', border: '3px solid #0A0A0A',
+              boxShadow: '3px 3px 0 #0A0A0A',
+              padding: '10px 20px', cursor: 'pointer',
+              fontFamily: "var(--font-body, 'IBM Plex Sans', sans-serif)",
+              fontSize: 13, fontWeight: 700, color: '#0A0A0A',
+            }}>COLAR JSON MANUALMENTE</button>
+            <button onClick={() => {
+              setDiagnosis(SAMPLE_DIAGNOSIS);
+              setScreen('result');
+            }} style={{
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              fontFamily: "var(--font-body, 'IBM Plex Sans', sans-serif)",
+              fontSize: 13, color: '#0A0A0A', opacity: 0.4,
+              textDecoration: 'underline',
+            }}>usar dados de exemplo (sem IA)</button>
+          </div>
+        </section>
+      )}
+
+      {/* ═══ SCREEN: Generate with AI ═══ */}
+      {screen === 'generate' && (
+        <section style={{
+          padding: '48px 32px',
+          maxWidth: 1200, margin: '0 auto', width: '100%',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24,
+        }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{
+              display: 'inline-block',
+              background: '#ED028A', padding: '4px 12px', marginBottom: 12,
+            }}>
+              <span style={{
+                fontFamily: "var(--font-pixel, 'Silkscreen', monospace)",
+                fontSize: 10, color: '#FFF9D5',
+              }}>PASSO 2 — ANÁLISE</span>
+            </div>
+            <h2 style={{
+              fontFamily: "var(--font-display, 'Bebas Neue', sans-serif)",
+              fontSize: 48, color: '#0A0A0A', lineHeight: 0.95,
+            }}>GERAR DIAGNÓSTICO</h2>
+          </div>
+
+          {/* Show selected form data summary if from Supabase */}
+          {selectedFormData && (
+            <div style={{
+              border: '3px solid #0A0A0A', background: '#0A0A0A',
+              padding: '12px 16px', maxWidth: 500, width: '100%',
+            }}>
+              <div style={{
+                fontFamily: "var(--font-pixel, 'Silkscreen', monospace)",
+                fontSize: 9, color: '#42A947', marginBottom: 6,
+              }}>DADOS CARREGADOS DO SUPABASE:</div>
+              <div style={{
+                fontFamily: "var(--font-body, 'IBM Plex Sans', sans-serif)",
+                fontSize: 13, color: '#FFF9D5', lineHeight: 1.5,
+              }}>
+                <strong>{selectedFormData.nome_agencia || selectedFormData.nome_completo || 'Agência'}</strong>
+                {selectedFormData.nome_completo && ` — ${selectedFormData.nome_completo}`}
+                {selectedFormData.email && <><br />{selectedFormData.email}</>}
+              </div>
+            </div>
+          )}
+
+          <DiagnosisGenerator
+            onDiagnosisReady={handleDiagnosisReady}
+            preloadedData={selectedFormData}
+          />
+
+          <button onClick={handleReset} style={{
+            background: 'transparent', border: 'none', cursor: 'pointer',
+            fontFamily: "var(--font-body, 'IBM Plex Sans', sans-serif)",
+            fontSize: 13, color: '#0A0A0A', opacity: 0.4,
+            textDecoration: 'underline',
+          }}>← voltar</button>
+        </section>
+      )}
+
+      {/* ═══ SCREEN: Result ═══ */}
+      {screen === 'result' && diagnosis && (
+        <>
+          {/* Hero */}
+          <section style={{
+            padding: '40px 32px 24px',
+            maxWidth: 1500, margin: '0 auto', width: '100%',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 32, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 300 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16 }}>
+                  <div style={{
+                    display: 'inline-block',
+                    background: '#ED028A', padding: '4px 12px',
+                  }}>
+                    <span style={{
+                      fontFamily: "var(--font-pixel, 'Silkscreen', monospace)",
+                      fontSize: 10, color: '#FFF9D5',
+                    }}>DECK DE DIAGNÓSTICO</span>
+                  </div>
+                  <button onClick={handleReset} className="no-print" style={{
+                    background: '#FFF9D5', border: '2px solid #0A0A0A',
+                    padding: '3px 10px', cursor: 'pointer',
+                    fontFamily: "var(--font-pixel, 'Silkscreen', monospace)",
+                    fontSize: 9, color: '#0A0A0A',
+                    boxShadow: '2px 2px 0 #0A0A0A',
+                  }}>NOVO DIAGNÓSTICO</button>
+                </div>
+
+                <h1 style={{
+                  fontFamily: "var(--font-display, 'Bebas Neue', sans-serif)",
+                  fontSize: 'clamp(48px, 8vw, 100px)',
+                  lineHeight: 0.9, letterSpacing: '-0.02em',
+                  color: '#0A0A0A', textTransform: 'uppercase',
+                }}>{diagnosis.agencia}</h1>
+
+                <p style={{
+                  fontFamily: "var(--font-body, 'IBM Plex Sans', sans-serif)",
+                  fontSize: 16, color: '#0A0A0A', lineHeight: 1.5,
+                  marginTop: 12, maxWidth: 520,
+                }}>
+                  Mentoria de <strong>{diagnosis.nome}</strong> — {diagnosis.cards.length} cartas no deck.
+                  {!revealed && ' Clique em "Revelar Cartas" pra ver seu diagnóstico.'}
+                  {revealed && ' Clique em cada carta pra ver o diagnóstico completo.'}
+                  {diagnosis.resumo && revealed && (
+                    <><br /><em style={{ opacity: 0.7 }}>{diagnosis.resumo}</em></>
+                  )}
+                </p>
+              </div>
+
+              {revealed && <KokoScore cards={diagnosis.cards} />}
+            </div>
+          </section>
+
+          {/* Reveal button */}
+          {!revealed && (
+            <section className="no-print" style={{ padding: '16px 32px 32px', maxWidth: 1500, margin: '0 auto', width: '100%', textAlign: 'center' }}>
+              <RevealButton onClick={handleReveal} revealed={false} />
+            </section>
+          )}
+
+          {/* Cards */}
+          <section style={{
+            padding: '24px 32px 48px',
+            maxWidth: 1500, margin: '0 auto', width: '100%',
+          }}>
+            <div style={{
+              display: 'flex', gap: 20,
+              overflowX: 'auto', paddingBottom: 12,
+              justifyContent: 'center', flexWrap: 'wrap',
+            }}>
+              {diagnosis.cards.map((card, i) => (
+                <KokoCard
+                  key={i}
+                  dimIndex={card.dimIndex}
+                  level={card.level}
+                  delay={revealed ? i * 200 : i * 80}
+                  revealed={revealed}
+                  onClick={() => setSelectedCard(card)}
+                />
+              ))}
+            </div>
+          </section>
+
+          {/* SWOT */}
+          {revealed && (
+            <section style={{
+              padding: '0 32px 48px',
+              maxWidth: 1100, margin: '0 auto', width: '100%',
+            }}>
+              <div style={{
+                fontFamily: "var(--font-display, 'Bebas Neue', sans-serif)",
+                fontSize: 32, color: '#0A0A0A',
+                borderBottom: '4px solid #0A0A0A', paddingBottom: 8, marginBottom: 20,
+              }}>MATRIZ SWOT</div>
+              <SWOTMatrix cards={diagnosis.cards} onCardClick={(card) => setSelectedCard(card)} />
+            </section>
+          )}
+
+          {/* Summary */}
+          {revealed && (
+            <section style={{
+              padding: '0 32px 40px',
+              maxWidth: 1500, margin: '0 auto', width: '100%',
+            }}>
+              <div style={{
+                fontFamily: "var(--font-display, 'Bebas Neue', sans-serif)",
+                fontSize: 28, color: '#0A0A0A',
+                borderBottom: '4px solid #0A0A0A', paddingBottom: 8, marginBottom: 16,
+              }}>RESUMO DO DIAGNÓSTICO</div>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                {diagnosis.cards.map((card, i) => {
+                  const dim = DIMENSIONS[card.dimIndex];
+                  const lv = dim.levels[card.level];
+                  const cardBgs = ['#ED028A', '#7807F7', '#013B26', '#F7ED07', '#FF81FF'];
+                  const bg = cardBgs[card.dimIndex];
+                  const textColor = card.dimIndex === 3 ? '#0A0A0A' : '#FFF9D5';
+                  return (
+                    <div key={i} onClick={() => setSelectedCard(card)}
+                      style={{
+                        flex: '1 1 200px', minWidth: 200,
+                        border: '3px solid #0A0A0A',
+                        boxShadow: '3px 3px 0 #0A0A0A',
+                        cursor: 'pointer', overflow: 'hidden',
+                        transition: 'transform 0.15s',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.transform = 'translate(-2px,-2px)'}
+                      onMouseLeave={e => e.currentTarget.style.transform = 'translate(0,0)'}
+                    >
+                      <div style={{ background: bg, padding: '10px 14px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ fontFamily: "var(--font-pixel)", fontSize: 9, color: textColor, opacity: 0.7 }}>{dim.title}</span>
+                          <span style={{ fontFamily: "var(--font-pixel)", fontSize: 9, color: textColor, fontWeight: 700 }}>LV.{card.level + 1}</span>
+                        </div>
+                        <div style={{ fontFamily: "var(--font-display)", fontSize: 22, color: textColor, marginTop: 4 }}>{lv.name}</div>
+                      </div>
+                      <div style={{ display: 'flex', background: '#FFF9D5', padding: '6px 14px' }}>
+                        {Array.from({length: 5}).map((_, j) => (
+                          <div key={j} style={{
+                            flex: 1, height: 6, marginRight: j < 4 ? 3 : 0,
+                            background: j <= card.level ? '#0A0A0A' : '#E0DCC0',
+                            border: '1px solid #0A0A0A',
+                          }} />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* Share Link + PDF */}
+          {revealed && (
+            <section className="no-print" style={{
+              padding: '0 32px 48px',
+              maxWidth: 1500, margin: '0 auto', width: '100%',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
+            }}>
+              <ShareLinkButton diagnosis={diagnosis} />
+              <DownloadPDFButton />
+            </section>
+          )}
+        </>
+      )}
+
+      {/* ── Footer ── */}
+      <footer style={{
+        marginTop: 'auto',
+        padding: '16px 32px',
+        borderTop: '4px solid #0A0A0A',
+        background: '#0A0A0A',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8,
+      }}>
+        <span style={{
+          fontFamily: "var(--font-pixel, 'Silkscreen', monospace)",
+          fontSize: 10, color: '#FFF9D5',
+        }}>AGÊNCIA KOKO© — A AGÊNCIA MAIS QUERIDA DO BRASIL</span>
+        <span style={{
+          fontFamily: "var(--font-pixel, 'Silkscreen', monospace)",
+          fontSize: 9, color: '#FFF9D5', opacity: 0.4,
+        }}>DIAGNÓSTICO GERADO POR IA • AJUSTADO PELO MENTOR</span>
+      </footer>
+
+      {/* ── Modal ── */}
+      {selectedCard && (
+        <KokoDetailModal
+          dimIndex={selectedCard.dimIndex}
+          level={selectedCard.level}
+          onClose={() => setSelectedCard(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
