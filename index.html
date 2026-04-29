@@ -232,26 +232,6 @@ function App() {
 
           {/* Supabase panel */}
           <SupabasePanel onSelectRecord={handleSelectRecord} />
-
-          {/* Or skip to manual */}
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
-            <button onClick={() => setScreen('generate')} style={{
-              background: '#FFF9D5', border: '3px solid #0A0A0A',
-              boxShadow: '3px 3px 0 #0A0A0A',
-              padding: '10px 20px', cursor: 'pointer',
-              fontFamily: "var(--font-body, 'IBM Plex Sans', sans-serif)",
-              fontSize: 13, fontWeight: 700, color: '#0A0A0A',
-            }}>COLAR JSON MANUALMENTE</button>
-            <button onClick={() => {
-              setDiagnosis(SAMPLE_DIAGNOSIS);
-              setScreen('result');
-            }} style={{
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              fontFamily: "var(--font-body, 'IBM Plex Sans', sans-serif)",
-              fontSize: 13, color: '#0A0A0A', opacity: 0.4,
-              textDecoration: 'underline',
-            }}>usar dados de exemplo (sem IA)</button>
-          </div>
         </section>
       )}
 
