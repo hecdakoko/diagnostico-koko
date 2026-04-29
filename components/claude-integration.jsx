@@ -53,16 +53,35 @@ RESPONDA APENAS com um JSON válido neste formato exato, sem texto adicional:
 Onde cada N é um número de 0 a 4 para cada dimensão na ordem acima.`;
 }
 
+/* ── Pede senha admin uma vez, salva no browser ── */
+function prompt_user_for_password() {
+  return window.prompt('Digite a senha de admin Koko (só você gera diagnósticos):');
+}
+
 /* ── Generate diagnosis using Claude (via Vercel Edge Function) ── */
 async function generateDiagnosis(formData) {
   const prompt = buildDiagnosisPrompt(formData);
 
   try {
+    let adminPassword = localStorage.getItem('koko_admin_password');
+    if (!adminPassword) {
+      adminPassword = prompt_user_for_password();
+      if (!adminPassword) throw new Error('Senha admin necessária pra gerar diagnóstico.');
+      localStorage.setItem('koko_admin_password', adminPassword);
+    }
+
     const r = await fetch('/api/generate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-password': adminPassword,
+      },
       body: JSON.stringify({ prompt }),
     });
+    if (r.status === 401) {
+      localStorage.removeItem('koko_admin_password');
+      throw new Error('Senha admin incorreta. Recarregue e tente de novo.');
+    }
     if (!r.ok) {
       const errBody = await r.text();
       throw new Error(`API ${r.status}: ${errBody.slice(0, 200)}`);

@@ -18,10 +18,19 @@ export default async function handler(req: Request): Promise<Response> {
 
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    if (!apiKey || !adminPassword) {
       return new Response(
-        JSON.stringify({ error: "ANTHROPIC_API_KEY not set" }),
+        JSON.stringify({ error: "server not configured" }),
         { status: 500, headers: { ...cors, "Content-Type": "application/json" } }
+      );
+    }
+
+    const authHeader = req.headers.get("x-admin-password");
+    if (authHeader !== adminPassword) {
+      return new Response(
+        JSON.stringify({ error: "unauthorized" }),
+        { status: 401, headers: { ...cors, "Content-Type": "application/json" } }
       );
     }
 
@@ -36,7 +45,7 @@ export default async function handler(req: Request): Promise<Response> {
     const client = new Anthropic({ apiKey });
 
     const message = await client.messages.create({
-      model: "claude-opus-4-7",
+      model: "claude-opus-4-6",
       max_tokens: 1024,
       messages: [{ role: "user", content: prompt }],
     });
