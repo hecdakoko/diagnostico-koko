@@ -31,6 +31,52 @@ body {
   50% { transform: scaleX(0.05); opacity: 0.5; }
   100% { transform: scaleX(1); opacity: 1; }
 }
+
+/* ── Animações das ilustrações das cartas ── */
+@keyframes koko-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes koko-rotate-rev {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(-360deg); }
+}
+@keyframes koko-pulse {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.08); }
+}
+@keyframes koko-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes koko-drift {
+  0%, 100% { transform: translateX(0) translateY(0); }
+  25% { transform: translateX(3px) translateY(-2px); }
+  50% { transform: translateX(0) translateY(-4px); }
+  75% { transform: translateX(-3px) translateY(-2px); }
+}
+@keyframes koko-blink {
+  0%, 90%, 100% { opacity: 1; }
+  92%, 95% { opacity: 0.2; }
+}
+@keyframes koko-dash {
+  to { stroke-dashoffset: -40; }
+}
+
+.koko-anim-rotate { transform-origin: center; transform-box: fill-box; animation: koko-rotate 18s linear infinite; }
+.koko-anim-rotate-slow { transform-origin: center; transform-box: fill-box; animation: koko-rotate 32s linear infinite; }
+.koko-anim-rotate-rev { transform-origin: center; transform-box: fill-box; animation: koko-rotate-rev 24s linear infinite; }
+.koko-anim-pulse { transform-origin: center; transform-box: fill-box; animation: koko-pulse 4s ease-in-out infinite; }
+.koko-anim-float { transform-origin: center; transform-box: fill-box; animation: koko-float 5s ease-in-out infinite; }
+.koko-anim-drift { transform-origin: center; transform-box: fill-box; animation: koko-drift 7s ease-in-out infinite; }
+.koko-anim-blink { animation: koko-blink 4s ease-in-out infinite; }
+.koko-anim-dash { stroke-dasharray: 8 8; animation: koko-dash 2.5s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .koko-anim-rotate, .koko-anim-rotate-slow, .koko-anim-rotate-rev,
+  .koko-anim-pulse, .koko-anim-float, .koko-anim-drift,
+  .koko-anim-blink, .koko-anim-dash { animation: none !important; }
+}
 </style>
 </head>
 <body>

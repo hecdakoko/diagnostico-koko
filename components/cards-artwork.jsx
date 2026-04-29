@@ -56,8 +56,8 @@ function ArtEstutura({ level, size = 300 }) {
       ))}
 
       {/* Large background circle */}
-      <circle cx={150} cy={150} r={90 + level * 15} fill="none" stroke={ART_PALETTE.rosa} strokeWidth="3" opacity="0.3" />
-      <circle cx={150} cy={150} r={60 + level * 10} fill={`url(#ht-est)`} opacity="0.15" />
+      <circle className="koko-anim-rotate-slow" cx={150} cy={150} r={90 + level * 15} fill="none" stroke={ART_PALETTE.rosa} strokeWidth="3" opacity="0.3" strokeDasharray="6 12" />
+      <circle className="koko-anim-pulse" cx={150} cy={150} r={60 + level * 10} fill={`url(#ht-est)`} opacity="0.15" />
 
       {/* Architectural blocks */}
       {Array.from({length: blockCount}).map((_, i) => {
@@ -82,7 +82,7 @@ function ArtEstutura({ level, size = 300 }) {
       })}
 
       {/* Central drop/diamond shape */}
-      <g transform="translate(150,140)">
+      <g className="koko-anim-float" transform="translate(150,140)">
         <path d={`M0,-45 L30,10 Q30,45 0,55 Q-30,45 -30,10 Z`}
           fill={ART_PALETTE.rosa} stroke={ART_PALETTE.preto} strokeWidth="3" />
         <path d={`M0,-30 L15,5 Q15,25 0,32 Q-15,25 -15,5 Z`}
@@ -169,8 +169,8 @@ function ArtDigital({ level, size = 300 }) {
       })}
 
       {/* Large orbital circle */}
-      <circle cx={150} cy={150} r={80 + level * 12} fill="none" stroke={ART_PALETTE.roxo} strokeWidth="2.5" opacity="0.4" />
-      <circle cx={150} cy={150} r={50 + level * 8} fill={`url(#ht-dig)`} opacity="0.12" />
+      <circle className="koko-anim-rotate" cx={150} cy={150} r={80 + level * 12} fill="none" stroke={ART_PALETTE.roxo} strokeWidth="2.5" opacity="0.4" strokeDasharray="10 6" />
+      <circle className="koko-anim-pulse" cx={150} cy={150} r={50 + level * 8} fill={`url(#ht-dig)`} opacity="0.12" />
 
       {/* Nodes */}
       {nodes.map((n, i) => (
@@ -190,7 +190,7 @@ function ArtDigital({ level, size = 300 }) {
       ))}
 
       {/* Central signal burst */}
-      <g transform="translate(150,150)">
+      <g className="koko-anim-rotate-rev" transform="translate(150,150)">
         {Array.from({length: 12}).map((_, i) => {
           const a = (i / 12) * Math.PI * 2;
           const len = 25 + (i % 2 ? 15 : 0);
@@ -202,7 +202,7 @@ function ArtDigital({ level, size = 300 }) {
             />
           );
         })}
-        <circle cx={0} cy={0} r={18} fill={ART_PALETTE.roxo} />
+        <circle className="koko-anim-pulse" cx={0} cy={0} r={18} fill={ART_PALETTE.roxo} />
         <circle cx={0} cy={0} r={8} fill={ART_PALETTE.creme} />
       </g>
 
@@ -230,18 +230,20 @@ function ArtPosicionamento({ level, size = 300 }) {
 
       {/* Compass rose background */}
       <g transform="translate(150,150)">
-        {Array.from({length: 16}).map((_, i) => {
-          const a = (i / 16) * Math.PI * 2;
-          const long = i % 2 === 0;
-          return (
-            <line key={`cr${i}`}
-              x1={0} y1={0}
-              x2={Math.cos(a) * (long ? 130 : 80)}
-              y2={Math.sin(a) * (long ? 130 : 80)}
-              stroke={ART_PALETTE.verde} strokeWidth={long ? 1.5 : 0.8} opacity="0.15"
-            />
-          );
-        })}
+        <g className="koko-anim-rotate-slow">
+          {Array.from({length: 16}).map((_, i) => {
+            const a = (i / 16) * Math.PI * 2;
+            const long = i % 2 === 0;
+            return (
+              <line key={`cr${i}`}
+                x1={0} y1={0}
+                x2={Math.cos(a) * (long ? 130 : 80)}
+                y2={Math.sin(a) * (long ? 130 : 80)}
+                stroke={ART_PALETTE.verde} strokeWidth={long ? 1.5 : 0.8} opacity="0.15"
+              />
+            );
+          })}
+        </g>
 
         {/* Concentric rings */}
         {[120, 90, 60, 35].map((r, i) => (
@@ -249,11 +251,13 @@ function ArtPosicionamento({ level, size = 300 }) {
             fill={i === 2 ? `url(#ht-pos)` : 'none'}
             stroke={ART_PALETTE.verde} strokeWidth={i === 0 ? 3 : 1.5}
             opacity={i === 0 ? 0.5 : 0.2 + i * 0.1}
+            className={i === 1 ? 'koko-anim-pulse' : ''}
           />
         ))}
 
         {/* Starburst */}
         <polygon
+          className="koko-anim-rotate"
           points={Array.from({length: 16}).map((_, i) => {
             const a = (i / 16) * Math.PI * 2 - Math.PI / 2;
             const r = i % 2 === 0 ? 50 : 28;
@@ -263,9 +267,11 @@ function ArtPosicionamento({ level, size = 300 }) {
         />
 
         {/* Inner drop */}
-        <path d={`M0,-22 L14,5 Q14,20 0,25 Q-14,20 -14,5 Z`}
-          fill={ART_PALETTE.creme} stroke={ART_PALETTE.preto} strokeWidth="2" />
-        <circle cx={0} cy={5} r={5} fill={ART_PALETTE.roxo} />
+        <g className="koko-anim-float">
+          <path d={`M0,-22 L14,5 Q14,20 0,25 Q-14,20 -14,5 Z`}
+            fill={ART_PALETTE.creme} stroke={ART_PALETTE.preto} strokeWidth="2" />
+          <circle cx={0} cy={5} r={5} fill={ART_PALETTE.roxo} />
+        </g>
       </g>
 
       {/* Corner geometric accents */}
@@ -341,16 +347,15 @@ function ArtCarteira({ level, size = 300 }) {
       })}
 
       {/* Central floating diamond */}
-      <g transform="translate(150,120)">
-        <rect x={-25} y={-25} width={50} height={50}
-          fill={ART_PALETTE.amarelo} stroke={ART_PALETTE.preto} strokeWidth="3"
-          transform="rotate(45)" />
-        <circle cx={0} cy={0} r={12} fill={ART_PALETTE.rosa} />
+      <g className="koko-anim-float" transform="translate(150,120)">
+        <rect className="koko-anim-rotate-slow" x={-25} y={-25} width={50} height={50}
+          fill={ART_PALETTE.amarelo} stroke={ART_PALETTE.preto} strokeWidth="3" />
+        <circle className="koko-anim-pulse" cx={0} cy={0} r={12} fill={ART_PALETTE.rosa} />
         <circle cx={0} cy={0} r={5} fill={ART_PALETTE.creme} />
       </g>
 
       {/* Decorative drop shape */}
-      <g transform="translate(60,80)">
+      <g className="koko-anim-drift" transform="translate(60,80)">
         <path d="M0,-18 L10,4 Q10,16 0,20 Q-10,16 -10,4 Z"
           fill={ART_PALETTE.roxo} opacity="0.7" />
       </g>
@@ -393,12 +398,12 @@ function ArtFinanceiro({ level, size = 300 }) {
       <rect x={55} y={65} width={30} height={30} fill={ART_PALETTE.amarelo} />
 
       {/* Large circle with halftone */}
-      <circle cx={200} cy={100} r={55} fill={`url(#ht-fin)`} opacity="0.15" />
-      <circle cx={200} cy={100} r={55} fill="none" stroke={ART_PALETTE.roxo} strokeWidth="2.5" opacity="0.4" />
-      <circle cx={200} cy={100} r={35} fill={ART_PALETTE.roxo} opacity="0.6" />
+      <circle className="koko-anim-pulse" cx={200} cy={100} r={55} fill={`url(#ht-fin)`} opacity="0.15" />
+      <circle className="koko-anim-rotate-slow" cx={200} cy={100} r={55} fill="none" stroke={ART_PALETTE.roxo} strokeWidth="2.5" opacity="0.4" strokeDasharray="6 8" />
+      <circle className="koko-anim-pulse" cx={200} cy={100} r={35} fill={ART_PALETTE.roxo} opacity="0.6" />
 
       {/* Central drop motif */}
-      <g transform="translate(150,170)">
+      <g className="koko-anim-float" transform="translate(150,170)">
         <path d="M0,-35 L22,8 Q22,35 0,42 Q-22,35 -22,8 Z"
           fill={ART_PALETTE.rosa} stroke={ART_PALETTE.preto} strokeWidth="3" />
         <path d="M0,-20 L10,4 Q10,18 0,22 Q-10,18 -10,4 Z"
@@ -414,7 +419,7 @@ function ArtFinanceiro({ level, size = 300 }) {
       ))}
 
       {/* Abstract organic blob */}
-      <path d={`M230,210 Q260,190 270,220 Q285,250 260,260 Q235,270 225,245 Q215,230 230,210 Z`}
+      <path className="koko-anim-drift" d={`M230,210 Q260,190 270,220 Q285,250 260,260 Q235,270 225,245 Q215,230 230,210 Z`}
         fill={ART_PALETTE.magenta} opacity="0.5" />
 
       {/* Small scattered shapes */}
