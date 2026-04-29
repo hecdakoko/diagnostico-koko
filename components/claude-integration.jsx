@@ -53,12 +53,22 @@ RESPONDA APENAS com um JSON válido neste formato exato, sem texto adicional:
 Onde cada N é um número de 0 a 4 para cada dimensão na ordem acima.`;
 }
 
-/* ── Generate diagnosis using Claude ── */
+/* ── Generate diagnosis using Claude (via Vercel Edge Function) ── */
 async function generateDiagnosis(formData) {
   const prompt = buildDiagnosisPrompt(formData);
 
   try {
-    const response = await window.claude.complete(prompt);
+    const r = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+    });
+    if (!r.ok) {
+      const errBody = await r.text();
+      throw new Error(`API ${r.status}: ${errBody.slice(0, 200)}`);
+    }
+    const { text } = await r.json();
+    const response = text;
 
     // Extract JSON from response
     const jsonMatch = response.match(/\{[\s\S]*\}/);
