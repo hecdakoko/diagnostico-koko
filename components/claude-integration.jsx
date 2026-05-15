@@ -1,7 +1,73 @@
 /* ── KOKO Diagnóstico — Claude AI Integration v2 ── */
 /* Generates diagnosis levels + McKinsey-style SWOT from real form data */
+/* Works in both environments: internal (window.claude) and Vercel (/api/generate) */
 
 const { useState, useCallback } = React;
+
+/* ── Universal Claude call — tries window.claude first, then /api/generate ── */
+const ADMIN_PASSWORD_KEY = '__koko_admin_pw';
+
+function getAdminPassword() {
+  try { return localStorage.getItem(ADMIN_PASSWORD_KEY) || ''; } catch { return ''; }
+}
+function setAdminPassword(pw) {
+  try { localStorage.setItem(ADMIN_PASSWORD_KEY, pw); } catch {}
+}
+
+async function callClaude(prompt) {
+  /* Try internal API first (works inside this platform) */
+  if (window.claude && typeof window.claude.complete === 'function') {
+    return window.claude.complete(prompt);
+  }
+
+  /* Fallback: Vercel /api/generate endpoint */
+  let pw = getAdminPassword();
+  if (!pw) {
+    pw = window.prompt('Senha de admin (necessária para gerar diagnóstico):');
+    if (!pw) throw new Error('Senha necessária para gerar diagnóstico');
+    setAdminPassword(pw);
+  }
+
+  const res = await fetch('/api/generate', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-password': pw,
+    },
+    body: JSON.stringify({ prompt }),
+  });
+
+  if (res.status === 401) {
+    /* Wrong password — clear and retry once */
+    setAdminPassword('');
+    const newPw = window.prompt('Senha incorreta. Tente novamente:');
+    if (!newPw) throw new Error('Senha necessária');
+    setAdminPassword(newPw);
+
+    const retry = await fetch('/api/generate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-password': newPw,
+      },
+      body: JSON.stringify({ prompt }),
+    });
+    if (!retry.ok) {
+      const err = await retry.json().catch(() => ({ error: 'Erro desconhecido' }));
+      throw new Error(err.error || `Erro ${retry.status}`);
+    }
+    const data = await retry.json();
+    return data.text;
+  }
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Erro desconhecido' }));
+    throw new Error(err.error || `Erro ${res.status}`);
+  }
+
+  const data = await res.json();
+  return data.text;
+}
 
 /* ── Prompt: classify agency into 5 dimensions ── */
 function buildDiagnosisPrompt(formData) {
@@ -65,7 +131,7 @@ Onde cada N é um número de 0 a 4 para cada dimensão na ordem acima.`;
 async function generateDiagnosis(formData) {
   const prompt = buildDiagnosisPrompt(formData);
   try {
-    const response = await window.claude.complete(prompt);
+    const response = await callClaude(prompt);
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('Resposta inválida da IA');
     const parsed = JSON.parse(jsonMatch[0]);
@@ -115,7 +181,7 @@ JSON puro:
 async function generateSWOTAnalysis(formData, levels) {
   const prompt = buildSWOTPrompt(formData, levels);
   try {
-    const response = await window.claude.complete(prompt);
+    const response = await callClaude(prompt);
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('Resposta SWOT inválida');
     return { success: true, data: JSON.parse(jsonMatch[0]) };
