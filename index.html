@@ -20,7 +20,6 @@ body {
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-track { background: #FFF9D5; }
 ::-webkit-scrollbar-thumb { background: #0A0A0A; }
-
 @media print {
   .no-print { display: none !important; }
   body { background: white; }
@@ -30,52 +29,6 @@ body {
   0% { transform: scaleX(0); opacity: 0; }
   50% { transform: scaleX(0.05); opacity: 0.5; }
   100% { transform: scaleX(1); opacity: 1; }
-}
-
-/* ── Animações das ilustrações das cartas ── */
-@keyframes koko-rotate {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-@keyframes koko-rotate-rev {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(-360deg); }
-}
-@keyframes koko-pulse {
-  0%, 100% { opacity: 0.3; transform: scale(1); }
-  50% { opacity: 0.7; transform: scale(1.08); }
-}
-@keyframes koko-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-6px); }
-}
-@keyframes koko-drift {
-  0%, 100% { transform: translateX(0) translateY(0); }
-  25% { transform: translateX(3px) translateY(-2px); }
-  50% { transform: translateX(0) translateY(-4px); }
-  75% { transform: translateX(-3px) translateY(-2px); }
-}
-@keyframes koko-blink {
-  0%, 90%, 100% { opacity: 1; }
-  92%, 95% { opacity: 0.2; }
-}
-@keyframes koko-dash {
-  to { stroke-dashoffset: -40; }
-}
-
-.koko-anim-rotate { transform-origin: center; transform-box: fill-box; animation: koko-rotate 18s linear infinite; }
-.koko-anim-rotate-slow { transform-origin: center; transform-box: fill-box; animation: koko-rotate 32s linear infinite; }
-.koko-anim-rotate-rev { transform-origin: center; transform-box: fill-box; animation: koko-rotate-rev 24s linear infinite; }
-.koko-anim-pulse { transform-origin: center; transform-box: fill-box; animation: koko-pulse 4s ease-in-out infinite; }
-.koko-anim-float { transform-origin: center; transform-box: fill-box; animation: koko-float 5s ease-in-out infinite; }
-.koko-anim-drift { transform-origin: center; transform-box: fill-box; animation: koko-drift 7s ease-in-out infinite; }
-.koko-anim-blink { animation: koko-blink 4s ease-in-out infinite; }
-.koko-anim-dash { stroke-dasharray: 8 8; animation: koko-dash 2.5s linear infinite; }
-
-@media (prefers-reduced-motion: reduce) {
-  .koko-anim-rotate, .koko-anim-rotate-slow, .koko-anim-rotate-rev,
-  .koko-anim-pulse, .koko-anim-float, .koko-anim-drift,
-  .koko-anim-blink, .koko-anim-dash { animation: none !important; }
 }
 </style>
 </head>
@@ -90,148 +43,379 @@ body {
 <script type="text/babel" src="components/supabase-integration.jsx"></script>
 
 <script type="text/babel">
-const { useState, useCallback, useEffect } = React;
+const { useState, useCallback, useEffect, useMemo } = React;
 
-/* ── URL encoding/decoding for shareable links ── */
-function encodeDiagnosis(diagnosis) {
-  const data = {
-    a: diagnosis.agencia,
-    n: diagnosis.nome,
-    c: diagnosis.cards.map(c => c.level),
-    r: diagnosis.resumo || '',
-  };
-  return btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+/* ══════════════════════════════════════════════════
+   FORM SUMMARY — clean display of mentorado responses
+   ══════════════════════════════════════════════════ */
+
+const FIELD_GROUPS = [
+  { title: 'PERFIL', keys: ['nome_completo','nome_agencia','email','papel','tempo_agencia','tamanho_equipe','modelo_operacao','cidade','estado','localizacao'] },
+  { title: 'HISTÓRIA', keys: ['historia','historia_agencia','contexto','sobre'] },
+  { title: 'PRESENÇA DIGITAL', keys: ['ig_seguidores','ig_engajamento','ig_gera_leads','ig_constancia','tem_site','tiktok','tiktok_seguidores','youtube','linkedin','site'] },
+  { title: 'POSICIONAMENTO', keys: ['nicho_tipo','nicho','cliente_ideal','diferencial','comunicacao_reflete','dores_cliente','publico_alvo'] },
+  { title: 'CARTEIRA & SERVIÇOS', keys: ['servicos','servico_mais_vendido','ticket_medio','clientes_ativos','clientes_ideais','fonte_clientes','desafio_carteira','precifica_corretamente'] },
+  { title: 'FINANCEIRO', keys: ['faturamento_12m','meta_faturamento','custo_fixo','saude_financeira','pro_labore','clareza_margem','desafio_financeiro'] },
+  { title: 'OBJETIVOS', keys: ['objetivo_principal','urgencia','meta_principal','expectativa_mentoria'] },
+];
+
+function formatKey(key) {
+  return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
-function decodeDiagnosis(encoded) {
-  try {
-    const json = decodeURIComponent(escape(atob(encoded)));
-    const data = JSON.parse(json);
-    return {
-      agencia: data.a,
-      nome: data.n,
-      data: new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase(),
-      cards: data.c.map((level, i) => ({ dimIndex: i, level })),
-      resumo: data.r || '',
-    };
-  } catch { return null; }
+function formatValue(val) {
+  if (val === null || val === undefined) return '—';
+  if (Array.isArray(val)) return val.join(', ');
+  if (typeof val === 'object') return JSON.stringify(val);
+  return String(val);
 }
 
-function getShareableLink(diagnosis) {
-  const encoded = encodeDiagnosis(diagnosis);
-  const base = window.location.href.split('?')[0].split('#')[0];
-  return `${base}?d=${encoded}`;
-}
+function FormSummary({ data }) {
+  if (!data || typeof data !== 'object') return null;
 
-/* ── Copy Link Button ── */
-function ShareLinkButton({ diagnosis }) {
-  const [copied, setCopied] = useState(false);
-  const link = getShareableLink(diagnosis);
+  const allKeys = Object.keys(data);
+  const usedKeys = new Set();
+  const groups = [];
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(link).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    });
-  };
+  FIELD_GROUPS.forEach(g => {
+    const fields = g.keys.filter(k => data[k] !== undefined && data[k] !== null && data[k] !== '');
+    fields.forEach(k => usedKeys.add(k));
+    if (fields.length > 0) groups.push({ title: g.title, fields: fields.map(k => ({ key: k, value: data[k] })) });
+  });
+
+  /* Remaining fields not in any group */
+  const remaining = allKeys.filter(k => !usedKeys.has(k) && data[k] !== undefined && data[k] !== null && data[k] !== '' && k !== 'id' && k !== 'created_at' && k !== 'updated_at');
+  if (remaining.length > 0) {
+    groups.push({ title: 'OUTROS', fields: remaining.map(k => ({ key: k, value: data[k] })) });
+  }
+
+  const cardBgs = ['#ED028A', '#7807F7', '#013B26', '#F7ED07', '#0A0A0A', '#FF81FF', '#42A947'];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-      <button onClick={handleCopy} style={{
-        display: 'inline-flex', alignItems: 'center', gap: 8,
-        background: copied ? '#42A947' : '#0A0A0A', color: '#FFF9D5',
-        border: '4px solid #0A0A0A',
-        boxShadow: '4px 4px 0 #ED028A',
-        padding: '12px 24px', cursor: 'pointer',
-        fontFamily: "var(--font-display, 'Bebas Neue', sans-serif)",
-        fontSize: 24, textTransform: 'uppercase',
-        transition: 'all 0.2s',
-      }}
-        className="no-print"
-        onMouseEnter={e => e.currentTarget.style.transform = 'translate(-2px,-2px)'}
-        onMouseLeave={e => e.currentTarget.style.transform = 'translate(0,0)'}
-      >
-        {copied ? 'LINK COPIADO!' : 'COPIAR LINK DO DIAGNÓSTICO'}
-      </button>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 800, width: '100%' }}>
       <div style={{
-        maxWidth: 500, width: '100%',
-        background: '#0A0A0A', padding: '8px 12px',
-        wordBreak: 'break-all',
-      }} className="no-print">
-        <span style={{
-          fontFamily: "var(--font-pixel, 'Silkscreen', monospace)",
-          fontSize: 8, color: '#FFF9D5', opacity: 0.5,
-        }}>{link}</span>
+        fontFamily: "var(--font-display)", fontSize: 28, color: '#0A0A0A',
+        borderBottom: '4px solid #0A0A0A', paddingBottom: 8,
+      }}>SUAS RESPOSTAS</div>
+
+      {groups.map((g, gi) => {
+        const bg = cardBgs[gi % cardBgs.length];
+        const isLight = bg === '#F7ED07';
+        const textColor = isLight ? '#0A0A0A' : '#FFF9D5';
+        return (
+          <div key={g.title} style={{
+            border: '3px solid #0A0A0A', boxShadow: '4px 4px 0 #0A0A0A', overflow: 'hidden',
+          }}>
+            <div style={{
+              background: bg, padding: '8px 14px', borderBottom: '2px solid #0A0A0A',
+            }}>
+              <span style={{ fontFamily: "var(--font-pixel)", fontSize: 10, color: textColor }}>{g.title}</span>
+            </div>
+            <div style={{ background: '#FFF9D5', padding: '12px 14px' }}>
+              {g.fields.map((f, fi) => {
+                const isLong = typeof f.value === 'string' && f.value.length > 80;
+                return (
+                  <div key={f.key} style={{
+                    padding: '6px 0',
+                    borderBottom: fi < g.fields.length - 1 ? '1px solid #E0DCC0' : 'none',
+                    display: isLong ? 'block' : 'flex', gap: 12,
+                  }}>
+                    <span style={{
+                      fontFamily: "var(--font-pixel)", fontSize: 9, color: '#0A0A0A', opacity: 0.5,
+                      minWidth: 120, flexShrink: 0,
+                    }}>{formatKey(f.key)}</span>
+                    <span style={{
+                      fontFamily: "var(--font-body)", fontSize: 13, color: '#0A0A0A', lineHeight: 1.5,
+                      marginTop: isLong ? 4 : 0,
+                    }}>{formatValue(f.value)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════
+   DIAGNOSIS SUMMARY — momento + ações + benchmarks
+   ══════════════════════════════════════════════════ */
+
+function DiagnosisSummarySection({ cards, swotData }) {
+  const momento = swotData && swotData.momento;
+  const acoes = swotData && swotData.acoes;
+  const benchmarks = swotData && swotData.benchmarks;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* Momento Atual */}
+      {momento && (
+        <div style={{
+          border: '4px solid #0A0A0A', boxShadow: '4px 4px 0 #0A0A0A',
+          overflow: 'hidden',
+        }}>
+          <div style={{ background: '#0A0A0A', padding: '8px 14px' }}>
+            <span style={{ fontFamily: "var(--font-pixel)", fontSize: 10, color: '#FFF9D5' }}>MOMENTO ATUAL</span>
+          </div>
+          <div style={{ padding: '16px 20px', background: '#FFF9D5' }}>
+            <p style={{ fontFamily: "var(--font-body)", fontSize: 15, lineHeight: 1.6, color: '#0A0A0A' }}>{momento}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Ações Prioritárias */}
+      {acoes && acoes.length > 0 && (
+        <div style={{
+          border: '4px solid #0A0A0A', boxShadow: '4px 4px 0 #ED028A',
+          overflow: 'hidden',
+        }}>
+          <div style={{ background: '#ED028A', padding: '8px 14px' }}>
+            <span style={{ fontFamily: "var(--font-pixel)", fontSize: 10, color: '#FFF9D5' }}>TOP {acoes.length} AÇÕES PRIORITÁRIAS — PRÓXIMOS 90 DIAS</span>
+          </div>
+          <div style={{ background: '#FFF9D5', display: 'flex', flexDirection: 'column' }}>
+            {acoes.map((a, i) => (
+              <div key={i} style={{
+                padding: '12px 20px',
+                borderBottom: i < acoes.length - 1 ? '2px solid #0A0A0A' : 'none',
+                display: 'flex', alignItems: 'flex-start', gap: 14,
+              }}>
+                <div style={{
+                  width: 32, height: 32, flexShrink: 0,
+                  background: '#0A0A0A', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <span style={{ fontFamily: "var(--font-display)", fontSize: 20, color: '#ED028A' }}>{i+1}</span>
+                </div>
+                <span style={{ fontFamily: "var(--font-body)", fontSize: 14, lineHeight: 1.5, color: '#0A0A0A' }}>{a}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Benchmarks */}
+      {benchmarks && (
+        <div style={{
+          border: '4px solid #0A0A0A', boxShadow: '4px 4px 0 #7807F7',
+          overflow: 'hidden',
+        }}>
+          <div style={{ background: '#7807F7', padding: '8px 14px' }}>
+            <span style={{ fontFamily: "var(--font-pixel)", fontSize: 10, color: '#FFF9D5' }}>BENCHMARKS — REFERÊNCIA DE MERCADO</span>
+          </div>
+          <div style={{ background: '#FFF9D5', padding: '16px 20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+              {Object.entries(benchmarks).map(([key, val]) => (
+                <div key={key} style={{
+                  background: '#0A0A0A', padding: '10px 14px',
+                }}>
+                  <div style={{ fontFamily: "var(--font-pixel)", fontSize: 8, color: '#7807F7', marginBottom: 4 }}>
+                    {formatKey(key)}
+                  </div>
+                  <div style={{ fontFamily: "var(--font-body)", fontSize: 13, color: '#FFF9D5', lineHeight: 1.4 }}>{val}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dimension cards row */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        {cards.map((card, i) => {
+          const dim = DIMENSIONS[card.dimIndex];
+          const lv = dim.levels[card.level];
+          const cardBgs = ['#ED028A', '#7807F7', '#013B26', '#F7ED07', '#FF81FF'];
+          const bg = cardBgs[card.dimIndex];
+          const tc = card.dimIndex === 3 ? '#0A0A0A' : '#FFF9D5';
+          return (
+            <div key={i} style={{
+              flex: '1 1 180px', minWidth: 180,
+              border: '3px solid #0A0A0A', boxShadow: '3px 3px 0 #0A0A0A',
+              overflow: 'hidden',
+            }}>
+              <div style={{ background: bg, padding: '10px 14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ fontFamily: "var(--font-pixel)", fontSize: 9, color: tc, opacity: 0.7 }}>{dim.title}</span>
+                  <span style={{ fontFamily: "var(--font-pixel)", fontSize: 9, color: tc, fontWeight: 700 }}>LV.{card.level + 1}</span>
+                </div>
+                <div style={{ fontFamily: "var(--font-display)", fontSize: 22, color: tc, marginTop: 4 }}>{lv.name}</div>
+              </div>
+              <div style={{ display: 'flex', background: '#FFF9D5', padding: '6px 14px' }}>
+                {Array.from({length: 5}).map((_, j) => (
+                  <div key={j} style={{
+                    flex: 1, height: 6, marginRight: j < 4 ? 3 : 0,
+                    background: j <= card.level ? '#0A0A0A' : '#E0DCC0',
+                    border: '1px solid #0A0A0A',
+                  }} />
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-/* ── PDF still available as secondary option ── */
-function DownloadPDFButton() {
+/* ══════════════════════════════════════════════════
+   SHARE + PDF
+   ══════════════════════════════════════════════════ */
+
+function ShareLinkButton({ recordId }) {
+  const [copied, setCopied] = useState(false);
+  const link = recordId ? getRecordLink(recordId) : '';
+  const handleCopy = () => {
+    copyToClipboard(link).then((ok) => {
+      if (ok) { setCopied(true); setTimeout(() => setCopied(false), 2500); }
+    });
+  };
+  if (!recordId) return null;
   return (
-    <button onClick={() => window.print()} style={{
-      display: 'inline-flex', alignItems: 'center', gap: 8,
-      background: '#FFF9D5', color: '#0A0A0A',
-      border: '3px solid #0A0A0A',
-      boxShadow: '3px 3px 0 #0A0A0A',
-      padding: '8px 16px', cursor: 'pointer',
-      fontFamily: "var(--font-body, 'IBM Plex Sans', sans-serif)",
-      fontSize: 13, fontWeight: 700, textTransform: 'uppercase',
-      transition: 'transform 0.15s',
-    }}
-      className="no-print"
-      onMouseEnter={e => e.currentTarget.style.transform = 'translate(-2px,-2px)'}
-      onMouseLeave={e => e.currentTarget.style.transform = 'translate(0,0)'}
-    >
-      OU SALVAR COMO PDF
-    </button>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+      <button onClick={handleCopy} className="no-print" style={{
+        display: 'inline-flex', alignItems: 'center', gap: 8,
+        background: copied ? '#42A947' : '#0A0A0A', color: '#FFF9D5',
+        border: '4px solid #0A0A0A', boxShadow: '4px 4px 0 #ED028A',
+        padding: '12px 24px', cursor: 'pointer',
+        fontFamily: "var(--font-display)", fontSize: 24, transition: 'all 0.2s',
+      }}
+        onMouseEnter={e => e.currentTarget.style.transform = 'translate(-2px,-2px)'}
+        onMouseLeave={e => e.currentTarget.style.transform = 'translate(0,0)'}
+      >{copied ? 'LINK COPIADO!' : 'COPIAR LINK DO DIAGNÓSTICO'}</button>
+      <div style={{ maxWidth: 500, width: '100%', background: '#0A0A0A', padding: '8px 12px', wordBreak: 'break-all' }} className="no-print">
+        <span style={{ fontFamily: "var(--font-pixel)", fontSize: 8, color: '#FFF9D5', opacity: 0.5 }}>{link}</span>
+      </div>
+    </div>
   );
 }
 
-/* ── Main App ── */
+function DownloadPDFButton() {
+  return (
+    <button onClick={() => window.print()} className="no-print" style={{
+      display: 'inline-flex', alignItems: 'center', gap: 8,
+      background: '#FFF9D5', color: '#0A0A0A',
+      border: '3px solid #0A0A0A', boxShadow: '3px 3px 0 #0A0A0A',
+      padding: '8px 16px', cursor: 'pointer',
+      fontFamily: "var(--font-body)", fontSize: 13, fontWeight: 700,
+    }}
+      onMouseEnter={e => e.currentTarget.style.transform = 'translate(-2px,-2px)'}
+      onMouseLeave={e => e.currentTarget.style.transform = 'translate(0,0)'}
+    >SALVAR COMO PDF</button>
+  );
+}
+
+/* ══════════════════════════════════════════════════
+   MAIN APP
+   ══════════════════════════════════════════════════ */
+
 function App() {
   const [selectedCard, setSelectedCard] = useState(null);
   const [revealed, setRevealed] = useState(false);
   const [diagnosis, setDiagnosis] = useState(null);
-  const [screen, setScreen] = useState('source');
+  const [screen, setScreen] = useState('loading');
   const [selectedFormData, setSelectedFormData] = useState(null);
+  const [currentRecordId, setCurrentRecordId] = useState(null);
+  const [swotData, setSwotData] = useState(null);
+  const [isMenteeView, setIsMenteeView] = useState(false);
 
-  /* Check URL for shared diagnosis on load */
+  /* ── URL-based routing ── */
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const encoded = params.get('d');
-    if (encoded) {
-      const diag = decodeDiagnosis(encoded);
-      if (diag) {
-        setDiagnosis(diag);
-        setRevealed(false);
-        setScreen('result');
-      }
+    const id = params.get('id');
+    if (id) {
+      setIsMenteeView(true); /* ?id= links are for mentorados */
+      fetchDiagnosticById(id).then(record => {
+        if (record && record.diagnostico_resultado && record.diagnostico_resultado.levels) {
+          const res = record.diagnostico_resultado;
+          setDiagnosis({
+            agencia: record.nome_agencia || record.nome || 'Agência',
+            nome: record.nome || 'Mentorado',
+            data: new Date(res.updated_at || record.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase(),
+            cards: res.levels.map((level, i) => ({ dimIndex: i, level })),
+            resumo: res.resumo || '',
+            formData: record.form_data,
+          });
+          if (res.swot) setSwotData(res.swot);
+          setCurrentRecordId(id);
+          setRevealed(false);
+          setScreen('result');
+        } else {
+          setDiagnosis(null);
+          setCurrentRecordId(id);
+          /* Show form data while waiting for diagnosis */
+          if (record && record.form_data) {
+            setSelectedFormData(record.form_data);
+            setScreen('waiting');
+          } else {
+            setScreen('waiting');
+          }
+        }
+      }).catch(() => setScreen('source'));
+    } else {
+      setIsMenteeView(false);
+      setScreen('source');
     }
   }, []);
 
   const handleReveal = useCallback(() => setRevealed(true), []);
 
-  /* When a Supabase record is selected */
+  /* ── Record selected from Supabase list ── */
   const handleSelectRecord = useCallback((record) => {
-    setSelectedFormData(record.form_data || record);
-    setScreen('generate');
+    if (record.diagnostico_resultado && record.diagnostico_resultado.levels) {
+      const res = record.diagnostico_resultado;
+      setDiagnosis({
+        agencia: record.nome_agencia || record.nome || 'Agência',
+        nome: record.nome || 'Mentorado',
+        data: new Date(res.updated_at || record.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase(),
+        cards: res.levels.map((level, i) => ({ dimIndex: i, level })),
+        resumo: res.resumo || '',
+        formData: record.form_data,
+      });
+      if (res.swot) setSwotData(res.swot);
+      else setSwotData(null);
+      setCurrentRecordId(record.id);
+      setRevealed(false);
+      setScreen('result');
+    } else {
+      setSelectedFormData(record.form_data || record);
+      setCurrentRecordId(record.id);
+      setScreen('generate');
+    }
   }, []);
 
-  /* When AI diagnosis is ready */
+  /* ── AI diagnosis ready ── */
   const handleDiagnosisReady = useCallback((diag) => {
     setDiagnosis(diag);
+    setSwotData(null); /* Will auto-generate on reveal */
     setRevealed(false);
     setScreen('result');
-  }, []);
+    if (currentRecordId) {
+      const levels = diag.cards.map(c => c.level);
+      saveDiagnosisResult(currentRecordId, levels, diag.resumo || '');
+    }
+  }, [currentRecordId]);
 
-  /* Reset */
+  /* ── SWOT updated (from editable matrix) ── */
+  const handleSwotUpdate = useCallback((data) => {
+    setSwotData(data);
+    /* Auto-save to Supabase */
+    if (currentRecordId && diagnosis) {
+      const levels = diagnosis.cards.map(c => c.level);
+      saveDiagnosisResult(currentRecordId, levels, diagnosis.resumo || '', data);
+    }
+  }, [currentRecordId, diagnosis]);
+
+  /* ── Reset ── */
   const handleReset = useCallback(() => {
     setDiagnosis(null);
     setRevealed(false);
     setSelectedFormData(null);
+    setCurrentRecordId(null);
+    setSwotData(null);
+    setIsMenteeView(false);
     setScreen('source');
+    window.history.replaceState({}, '', window.location.pathname);
   }, []);
 
   return (
@@ -240,160 +424,116 @@ function App() {
       <header style={{
         padding: '12px 24px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        borderBottom: '4px solid #0A0A0A',
-        background: '#0A0A0A',
+        borderBottom: '4px solid #0A0A0A', background: '#0A0A0A',
       }} className="no-print">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <img src="assets/KOKO-WHITE.png" alt="KOKO" style={{ height: 28 }} />
-          <span style={{
-            fontFamily: "var(--font-pixel, 'Silkscreen', monospace)",
-            fontSize: 10, color: '#FFF9D5', opacity: 0.6,
-            textTransform: 'uppercase', letterSpacing: '0.08em',
-          }}>MENTORIA PARA AGÊNCIAS</span>
+          <span style={{ fontFamily: "var(--font-pixel)", fontSize: 10, color: '#FFF9D5', opacity: 0.6 }}>
+            {isMenteeView ? 'SEU DIAGNÓSTICO' : 'MENTORIA PARA AGÊNCIAS'}
+          </span>
         </div>
-        <span style={{
-          fontFamily: "var(--font-pixel, 'Silkscreen', monospace)",
-          fontSize: 10, color: '#FFF9D5', opacity: 0.5,
-        }}>{diagnosis ? diagnosis.data : new Date().toLocaleDateString('pt-BR').toUpperCase()}</span>
+        <span style={{ fontFamily: "var(--font-pixel)", fontSize: 10, color: '#FFF9D5', opacity: 0.5 }}>
+          {diagnosis ? diagnosis.data : new Date().toLocaleDateString('pt-BR').toUpperCase()}
+        </span>
       </header>
 
-      {/* ═══ SCREEN: Source Selection ═══ */}
-      {screen === 'source' && (
-        <section style={{
-          padding: '48px 32px',
-          maxWidth: 1200, margin: '0 auto', width: '100%',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 32,
-        }}>
-          <div style={{ textAlign: 'center' }}>
-            <h1 style={{
-              fontFamily: "var(--font-display, 'Bebas Neue', sans-serif)",
-              fontSize: 'clamp(36px, 6vw, 72px)',
-              lineHeight: 0.9, color: '#0A0A0A',
-            }}>DIAGNÓSTICO DE MENTORIA</h1>
-            <p style={{
-              fontFamily: "var(--font-body, 'IBM Plex Sans', sans-serif)",
-              fontSize: 15, color: '#0A0A0A', opacity: 0.6, marginTop: 10,
-            }}>Selecione um formulário do Supabase ou use dados de exemplo.</p>
-          </div>
+      {/* ═══ LOADING ═══ */}
+      {screen === 'loading' && (
+        <section style={{ padding: '80px 32px', textAlign: 'center', maxWidth: 1200, margin: '0 auto', width: '100%' }}>
+          <div style={{ fontFamily: "var(--font-display)", fontSize: 32, color: '#0A0A0A' }}>CARREGANDO DIAGNÓSTICO...</div>
+        </section>
+      )}
 
-          {/* Supabase panel */}
+      {/* ═══ WAITING (mentee, no diagnosis yet) ═══ */}
+      {screen === 'waiting' && (
+        <section style={{ padding: '60px 32px', textAlign: 'center', maxWidth: 800, margin: '0 auto', width: '100%' }}>
+          <div style={{ fontFamily: "var(--font-display)", fontSize: 48, color: '#0A0A0A', lineHeight: 0.95 }}>
+            SEU DIAGNÓSTICO ESTÁ SENDO PREPARADO
+          </div>
+          <p style={{ fontFamily: "var(--font-body)", fontSize: 16, color: '#0A0A0A', opacity: 0.6, marginTop: 16 }}>
+            O mentor está analisando suas respostas. Quando estiver pronto, esta página será atualizada automaticamente.
+          </p>
+          {selectedFormData && (
+            <div style={{ marginTop: 32, display: 'flex', justifyContent: 'center' }}>
+              <FormSummary data={selectedFormData} />
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* ═══ SOURCE SELECTION (mentor) ═══ */}
+      {screen === 'source' && (
+        <section style={{ padding: '48px 32px', maxWidth: 1200, margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 32 }}>
+          <div style={{ textAlign: 'center' }}>
+            <h1 style={{ fontFamily: "var(--font-display)", fontSize: 'clamp(36px, 6vw, 72px)', lineHeight: 0.9, color: '#0A0A0A' }}>
+              DIAGNÓSTICO DE MENTORIA
+            </h1>
+            <p style={{ fontFamily: "var(--font-body)", fontSize: 15, color: '#0A0A0A', opacity: 0.6, marginTop: 10 }}>
+              Selecione um formulário recebido para gerar o diagnóstico.
+            </p>
+          </div>
           <SupabasePanel onSelectRecord={handleSelectRecord} />
         </section>
       )}
 
-      {/* ═══ SCREEN: Generate with AI ═══ */}
+      {/* ═══ GENERATE (mentor) ═══ */}
       {screen === 'generate' && (
-        <section style={{
-          padding: '48px 32px',
-          maxWidth: 1200, margin: '0 auto', width: '100%',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24,
-        }}>
+        <section style={{ padding: '48px 32px', maxWidth: 1200, margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24 }}>
           <div style={{ textAlign: 'center' }}>
-            <div style={{
-              display: 'inline-block',
-              background: '#ED028A', padding: '4px 12px', marginBottom: 12,
-            }}>
-              <span style={{
-                fontFamily: "var(--font-pixel, 'Silkscreen', monospace)",
-                fontSize: 10, color: '#FFF9D5',
-              }}>PASSO 2 — ANÁLISE</span>
+            <div style={{ display: 'inline-block', background: '#ED028A', padding: '4px 12px', marginBottom: 12 }}>
+              <span style={{ fontFamily: "var(--font-pixel)", fontSize: 10, color: '#FFF9D5' }}>PASSO 2 — ANÁLISE</span>
             </div>
-            <h2 style={{
-              fontFamily: "var(--font-display, 'Bebas Neue', sans-serif)",
-              fontSize: 48, color: '#0A0A0A', lineHeight: 0.95,
-            }}>GERAR DIAGNÓSTICO</h2>
+            <h2 style={{ fontFamily: "var(--font-display)", fontSize: 48, color: '#0A0A0A', lineHeight: 0.95 }}>GERAR DIAGNÓSTICO</h2>
           </div>
-
-          {/* Show selected form data summary if from Supabase */}
-          {selectedFormData && (
-            <div style={{
-              border: '3px solid #0A0A0A', background: '#0A0A0A',
-              padding: '12px 16px', maxWidth: 500, width: '100%',
-            }}>
-              <div style={{
-                fontFamily: "var(--font-pixel, 'Silkscreen', monospace)",
-                fontSize: 9, color: '#42A947', marginBottom: 6,
-              }}>DADOS CARREGADOS DO SUPABASE:</div>
-              <div style={{
-                fontFamily: "var(--font-body, 'IBM Plex Sans', sans-serif)",
-                fontSize: 13, color: '#FFF9D5', lineHeight: 1.5,
-              }}>
-                <strong>{selectedFormData.nome_agencia || selectedFormData.nome_completo || 'Agência'}</strong>
-                {selectedFormData.nome_completo && ` — ${selectedFormData.nome_completo}`}
-                {selectedFormData.email && <><br />{selectedFormData.email}</>}
-              </div>
-            </div>
-          )}
-
-          <DiagnosisGenerator
-            onDiagnosisReady={handleDiagnosisReady}
-            preloadedData={selectedFormData}
-          />
-
+          <DiagnosisGenerator onDiagnosisReady={handleDiagnosisReady} preloadedData={selectedFormData} />
           <button onClick={handleReset} style={{
             background: 'transparent', border: 'none', cursor: 'pointer',
-            fontFamily: "var(--font-body, 'IBM Plex Sans', sans-serif)",
-            fontSize: 13, color: '#0A0A0A', opacity: 0.4,
-            textDecoration: 'underline',
+            fontFamily: "var(--font-body)", fontSize: 13, color: '#0A0A0A', opacity: 0.4, textDecoration: 'underline',
           }}>← voltar</button>
         </section>
       )}
 
-      {/* ═══ SCREEN: Result ═══ */}
+      {/* ═══ RESULT ═══ */}
       {screen === 'result' && diagnosis && (
         <>
+          {/* Mentee: form summary first */}
+          {isMenteeView && diagnosis.formData && (
+            <section style={{ padding: '32px 32px 0', maxWidth: 1200, margin: '0 auto', width: '100%', display: 'flex', justifyContent: 'center' }}>
+              <FormSummary data={diagnosis.formData} />
+            </section>
+          )}
+
           {/* Hero */}
-          <section style={{
-            padding: '40px 32px 24px',
-            maxWidth: 1500, margin: '0 auto', width: '100%',
-          }}>
+          <section style={{ padding: '40px 32px 24px', maxWidth: 1500, margin: '0 auto', width: '100%' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 32, flexWrap: 'wrap' }}>
               <div style={{ flex: 1, minWidth: 300 }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16 }}>
-                  <div style={{
-                    display: 'inline-block',
-                    background: '#ED028A', padding: '4px 12px',
-                  }}>
-                    <span style={{
-                      fontFamily: "var(--font-pixel, 'Silkscreen', monospace)",
-                      fontSize: 10, color: '#FFF9D5',
-                    }}>DECK DE DIAGNÓSTICO</span>
+                  <div style={{ display: 'inline-block', background: '#ED028A', padding: '4px 12px' }}>
+                    <span style={{ fontFamily: "var(--font-pixel)", fontSize: 10, color: '#FFF9D5' }}>DECK DE DIAGNÓSTICO</span>
                   </div>
-                  <button onClick={handleReset} className="no-print" style={{
-                    background: '#FFF9D5', border: '2px solid #0A0A0A',
-                    padding: '3px 10px', cursor: 'pointer',
-                    fontFamily: "var(--font-pixel, 'Silkscreen', monospace)",
-                    fontSize: 9, color: '#0A0A0A',
-                    boxShadow: '2px 2px 0 #0A0A0A',
-                  }}>NOVO DIAGNÓSTICO</button>
-                </div>
-
-                <h1 style={{
-                  fontFamily: "var(--font-display, 'Bebas Neue', sans-serif)",
-                  fontSize: 'clamp(48px, 8vw, 100px)',
-                  lineHeight: 0.9, letterSpacing: '-0.02em',
-                  color: '#0A0A0A', textTransform: 'uppercase',
-                }}>{diagnosis.agencia}</h1>
-
-                <p style={{
-                  fontFamily: "var(--font-body, 'IBM Plex Sans', sans-serif)",
-                  fontSize: 16, color: '#0A0A0A', lineHeight: 1.5,
-                  marginTop: 12, maxWidth: 520,
-                }}>
-                  Mentoria de <strong>{diagnosis.nome}</strong> — {diagnosis.cards.length} cartas no deck.
-                  {!revealed && ' Clique em "Revelar Cartas" pra ver seu diagnóstico.'}
-                  {revealed && ' Clique em cada carta pra ver o diagnóstico completo.'}
-                  {diagnosis.resumo && revealed && (
-                    <><br /><em style={{ opacity: 0.7 }}>{diagnosis.resumo}</em></>
+                  {!isMenteeView && (
+                    <button onClick={handleReset} className="no-print" style={{
+                      background: '#FFF9D5', border: '2px solid #0A0A0A', padding: '3px 10px', cursor: 'pointer',
+                      fontFamily: "var(--font-pixel)", fontSize: 9, color: '#0A0A0A', boxShadow: '2px 2px 0 #0A0A0A',
+                    }}>NOVO DIAGNÓSTICO</button>
                   )}
+                </div>
+                <h1 style={{
+                  fontFamily: "var(--font-display)", fontSize: 'clamp(48px, 8vw, 100px)',
+                  lineHeight: 0.9, letterSpacing: '-0.02em', color: '#0A0A0A', textTransform: 'uppercase',
+                }}>{diagnosis.agencia}</h1>
+                <p style={{ fontFamily: "var(--font-body)", fontSize: 16, color: '#0A0A0A', lineHeight: 1.5, marginTop: 12, maxWidth: 520 }}>
+                  {isMenteeView ? `Diagnóstico de ` : `Mentoria de `}
+                  <strong>{diagnosis.nome}</strong> — {diagnosis.cards.length} dimensões analisadas.
+                  {!revealed && ' Clique em "Revelar Cartas" pra ver seu diagnóstico.'}
+                  {revealed && diagnosis.resumo && <><br /><em style={{ opacity: 0.7 }}>{diagnosis.resumo}</em></>}
                 </p>
               </div>
-
               {revealed && <KokoScore cards={diagnosis.cards} />}
             </div>
           </section>
 
-          {/* Reveal button */}
+          {/* Reveal */}
           {!revealed && (
             <section className="no-print" style={{ padding: '16px 32px 32px', maxWidth: 1500, margin: '0 auto', width: '100%', textAlign: 'center' }}>
               <RevealButton onClick={handleReveal} revealed={false} />
@@ -401,135 +541,70 @@ function App() {
           )}
 
           {/* Cards */}
-          <section style={{
-            padding: '24px 32px 48px',
-            maxWidth: 1500, margin: '0 auto', width: '100%',
-          }}>
-            <div style={{
-              display: 'flex', gap: 20,
-              overflowX: 'auto', paddingBottom: 12,
-              justifyContent: 'center', flexWrap: 'wrap',
-            }}>
+          <section style={{ padding: '24px 32px 48px', maxWidth: 1500, margin: '0 auto', width: '100%' }}>
+            <div style={{ display: 'flex', gap: 20, overflowX: 'auto', paddingBottom: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
               {diagnosis.cards.map((card, i) => (
-                <KokoCard
-                  key={i}
-                  dimIndex={card.dimIndex}
-                  level={card.level}
-                  delay={revealed ? i * 200 : i * 80}
-                  revealed={revealed}
-                  onClick={() => setSelectedCard(card)}
-                />
+                <KokoCard key={i} dimIndex={card.dimIndex} level={card.level}
+                  delay={revealed ? i * 200 : i * 80} revealed={revealed}
+                  onClick={() => setSelectedCard(card)} />
               ))}
             </div>
           </section>
 
-          {/* SWOT */}
-          {revealed && (
-            <section style={{
-              padding: '0 32px 48px',
-              maxWidth: 1100, margin: '0 auto', width: '100%',
-            }}>
+          {/* SWOT (mentor only) */}
+          {revealed && !isMenteeView && (
+            <section style={{ padding: '0 32px 48px', maxWidth: 1100, margin: '0 auto', width: '100%' }}>
               <div style={{
-                fontFamily: "var(--font-display, 'Bebas Neue', sans-serif)",
-                fontSize: 32, color: '#0A0A0A',
+                fontFamily: "var(--font-display)", fontSize: 32, color: '#0A0A0A',
                 borderBottom: '4px solid #0A0A0A', paddingBottom: 8, marginBottom: 20,
               }}>MATRIZ SWOT</div>
-              <SWOTMatrix cards={diagnosis.cards} onCardClick={(card) => setSelectedCard(card)} />
+              <SWOTMatrix
+                cards={diagnosis.cards}
+                formData={diagnosis.formData}
+                aiSwot={swotData}
+                onSwotUpdate={handleSwotUpdate}
+                readOnly={false}
+              />
             </section>
           )}
 
           {/* Summary */}
           {revealed && (
-            <section style={{
-              padding: '0 32px 40px',
-              maxWidth: 1500, margin: '0 auto', width: '100%',
-            }}>
+            <section style={{ padding: '0 32px 40px', maxWidth: 1200, margin: '0 auto', width: '100%' }}>
               <div style={{
-                fontFamily: "var(--font-display, 'Bebas Neue', sans-serif)",
-                fontSize: 28, color: '#0A0A0A',
+                fontFamily: "var(--font-display)", fontSize: 28, color: '#0A0A0A',
                 borderBottom: '4px solid #0A0A0A', paddingBottom: 8, marginBottom: 16,
               }}>RESUMO DO DIAGNÓSTICO</div>
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                {diagnosis.cards.map((card, i) => {
-                  const dim = DIMENSIONS[card.dimIndex];
-                  const lv = dim.levels[card.level];
-                  const cardBgs = ['#ED028A', '#7807F7', '#013B26', '#F7ED07', '#FF81FF'];
-                  const bg = cardBgs[card.dimIndex];
-                  const textColor = card.dimIndex === 3 ? '#0A0A0A' : '#FFF9D5';
-                  return (
-                    <div key={i} onClick={() => setSelectedCard(card)}
-                      style={{
-                        flex: '1 1 200px', minWidth: 200,
-                        border: '3px solid #0A0A0A',
-                        boxShadow: '3px 3px 0 #0A0A0A',
-                        cursor: 'pointer', overflow: 'hidden',
-                        transition: 'transform 0.15s',
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.transform = 'translate(-2px,-2px)'}
-                      onMouseLeave={e => e.currentTarget.style.transform = 'translate(0,0)'}
-                    >
-                      <div style={{ background: bg, padding: '10px 14px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ fontFamily: "var(--font-pixel)", fontSize: 9, color: textColor, opacity: 0.7 }}>{dim.title}</span>
-                          <span style={{ fontFamily: "var(--font-pixel)", fontSize: 9, color: textColor, fontWeight: 700 }}>LV.{card.level + 1}</span>
-                        </div>
-                        <div style={{ fontFamily: "var(--font-display)", fontSize: 22, color: textColor, marginTop: 4 }}>{lv.name}</div>
-                      </div>
-                      <div style={{ display: 'flex', background: '#FFF9D5', padding: '6px 14px' }}>
-                        {Array.from({length: 5}).map((_, j) => (
-                          <div key={j} style={{
-                            flex: 1, height: 6, marginRight: j < 4 ? 3 : 0,
-                            background: j <= card.level ? '#0A0A0A' : '#E0DCC0',
-                            border: '1px solid #0A0A0A',
-                          }} />
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <DiagnosisSummarySection cards={diagnosis.cards} swotData={swotData} />
             </section>
           )}
 
-          {/* Share Link + PDF */}
-          {revealed && (
+          {/* Share + PDF (mentor only) */}
+          {revealed && !isMenteeView && (
             <section className="no-print" style={{
-              padding: '0 32px 48px',
-              maxWidth: 1500, margin: '0 auto', width: '100%',
+              padding: '0 32px 48px', maxWidth: 1500, margin: '0 auto', width: '100%',
               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
             }}>
-              <ShareLinkButton diagnosis={diagnosis} />
+              <ShareLinkButton recordId={currentRecordId} />
               <DownloadPDFButton />
             </section>
           )}
         </>
       )}
 
-      {/* ── Footer ── */}
+      {/* Footer */}
       <footer style={{
-        marginTop: 'auto',
-        padding: '16px 32px',
-        borderTop: '4px solid #0A0A0A',
-        background: '#0A0A0A',
+        marginTop: 'auto', padding: '16px 32px',
+        borderTop: '4px solid #0A0A0A', background: '#0A0A0A',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8,
       }}>
-        <span style={{
-          fontFamily: "var(--font-pixel, 'Silkscreen', monospace)",
-          fontSize: 10, color: '#FFF9D5',
-        }}>AGÊNCIA KOKO© — A AGÊNCIA MAIS QUERIDA DO BRASIL</span>
-        <span style={{
-          fontFamily: "var(--font-pixel, 'Silkscreen', monospace)",
-          fontSize: 9, color: '#FFF9D5', opacity: 0.4,
-        }}>DIAGNÓSTICO GERADO POR IA • AJUSTADO PELO MENTOR</span>
+        <span style={{ fontFamily: "var(--font-pixel)", fontSize: 10, color: '#FFF9D5' }}>AGÊNCIA KOKO© — A AGÊNCIA MAIS QUERIDA DO BRASIL</span>
+        <span style={{ fontFamily: "var(--font-pixel)", fontSize: 9, color: '#FFF9D5', opacity: 0.4 }}>DIAGNÓSTICO GERADO POR IA • AJUSTADO PELO MENTOR</span>
       </footer>
 
-      {/* ── Modal ── */}
+      {/* Modal */}
       {selectedCard && (
-        <KokoDetailModal
-          dimIndex={selectedCard.dimIndex}
-          level={selectedCard.level}
-          onClose={() => setSelectedCard(null)}
-        />
+        <KokoDetailModal dimIndex={selectedCard.dimIndex} level={selectedCard.level} onClose={() => setSelectedCard(null)} />
       )}
     </div>
   );
