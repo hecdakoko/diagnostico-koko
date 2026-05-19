@@ -551,8 +551,8 @@ function App() {
             </div>
           </section>
 
-          {/* SWOT (mentor only) */}
-          {revealed && !isMenteeView && (
+          {/* SWOT */}
+          {revealed && (
             <section style={{ padding: '0 32px 48px', maxWidth: 1100, margin: '0 auto', width: '100%' }}>
               <div style={{
                 fontFamily: "var(--font-display)", fontSize: 32, color: '#0A0A0A',
@@ -560,10 +560,10 @@ function App() {
               }}>MATRIZ SWOT</div>
               <SWOTMatrix
                 cards={diagnosis.cards}
-                formData={diagnosis.formData}
+                formData={isMenteeView ? null : diagnosis.formData}
                 aiSwot={swotData}
-                onSwotUpdate={handleSwotUpdate}
-                readOnly={false}
+                onSwotUpdate={isMenteeView ? null : handleSwotUpdate}
+                readOnly={isMenteeView}
               />
             </section>
           )}
