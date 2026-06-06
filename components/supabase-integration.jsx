@@ -28,15 +28,29 @@ async function fetchDiagnosticById(id) {
 }
 
 /* ── Save diagnosis result via PATCH ── */
-async function saveDiagnosisResult(recordId, levels, resumo, swotData) {
+async function saveDiagnosisResult(recordId, levels, resumo, swotData, formHash) {
   const payload = { levels, resumo, updated_at: new Date().toISOString() };
   if (swotData) payload.swot = swotData;
+  if (formHash) payload.form_hash = formHash;
   const res = await fetch(`${EDGE_FN_URL}?id=${recordId}`, {
     method: 'PATCH',
     headers: { ...edgeHeaders, 'Content-Type': 'application/json' },
     body: JSON.stringify({ diagnostico_resultado: payload }),
   });
   return res.ok;
+}
+
+/* ── Hash of form_data for invalidation check ── */
+/* Detecta se o mentorado editou o form depois do diagnóstico gerado */
+function hashFormData(data) {
+  if (!data || typeof data !== 'object') return '';
+  const keys = Object.keys(data).sort();
+  const str = JSON.stringify(data, keys);
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  }
+  return h.toString(36);
 }
 
 /* ── Build shareable link from record ID ── */

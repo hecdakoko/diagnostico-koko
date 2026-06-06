@@ -396,6 +396,16 @@ function App() {
   const [currentRecordId, setCurrentRecordId] = useState(null);
   const [swotData, setSwotData] = useState(null);
   const [isMenteeView, setIsMenteeView] = useState(false);
+  /* Cache metadata — só usado em mentor view */
+  const [savedFormHash, setSavedFormHash] = useState(''); /* hash do form_data no momento que o diagnóstico foi gerado */
+  const [generatedAt, setGeneratedAt] = useState(null); /* timestamp ISO do último diagnóstico */
+
+  /* Hash do form_data atual — se diferir do savedFormHash, mostra "form mudou, regerar?" */
+  const currentFormHash = useMemo(
+    () => (diagnosis && diagnosis.formData ? hashFormData(diagnosis.formData) : ''),
+    [diagnosis]
+  );
+  const formDataChanged = !!(savedFormHash && currentFormHash && savedFormHash !== currentFormHash);
 
   /* ── Admin auth gate (mentor view only) ── */
   const verifyAdminPassword = useCallback(async (pw) => {
@@ -431,6 +441,8 @@ function App() {
             formData: record.form_data,
           });
           if (res.swot) setSwotData(res.swot);
+          setSavedFormHash(res.form_hash || '');
+          setGeneratedAt(res.updated_at || record.created_at || null);
           setCurrentRecordId(id);
           setRevealed(false);
           setScreen('result');
@@ -482,12 +494,16 @@ function App() {
       });
       if (res.swot) setSwotData(res.swot);
       else setSwotData(null);
+      setSavedFormHash(res.form_hash || '');
+      setGeneratedAt(res.updated_at || record.created_at || null);
       setCurrentRecordId(record.id);
       setRevealed(false);
       setScreen('result');
     } else {
       setSelectedFormData(record.form_data || record);
       setCurrentRecordId(record.id);
+      setSavedFormHash('');
+      setGeneratedAt(null);
       setScreen('generate');
     }
   }, []);
@@ -498,9 +514,13 @@ function App() {
     setSwotData(null); /* Will auto-generate on reveal */
     setRevealed(false);
     setScreen('result');
+    const newHash = hashFormData(diag.formData);
+    const now = new Date().toISOString();
+    setSavedFormHash(newHash);
+    setGeneratedAt(now);
     if (currentRecordId) {
       const levels = diag.cards.map(c => c.level);
-      saveDiagnosisResult(currentRecordId, levels, diag.resumo || '');
+      saveDiagnosisResult(currentRecordId, levels, diag.resumo || '', null, newHash);
     }
   }, [currentRecordId]);
 
@@ -510,9 +530,24 @@ function App() {
     /* Auto-save to Supabase */
     if (currentRecordId && diagnosis) {
       const levels = diagnosis.cards.map(c => c.level);
-      saveDiagnosisResult(currentRecordId, levels, diagnosis.resumo || '', data);
+      const hash = savedFormHash || hashFormData(diagnosis.formData);
+      saveDiagnosisResult(currentRecordId, levels, diagnosis.resumo || '', data, hash);
     }
-  }, [currentRecordId, diagnosis]);
+  }, [currentRecordId, diagnosis, savedFormHash]);
+
+  /* ── Regerar diagnóstico (admin only) ── */
+  const handleRegenerate = useCallback(() => {
+    if (!diagnosis || !diagnosis.formData || !currentRecordId) return;
+    const msg = formDataChanged
+      ? 'O formulário foi atualizado depois do último diagnóstico. Regerar agora usa 1 chamada do Claude (~R$ 1,30). Continuar?'
+      : 'Regerar vai sobrescrever o diagnóstico atual e usar 1 chamada do Claude (~R$ 1,30). Continuar?';
+    if (!window.confirm(msg)) return;
+    setSelectedFormData(diagnosis.formData);
+    setDiagnosis(null);
+    setSwotData(null);
+    setRevealed(false);
+    setScreen('generate');
+  }, [diagnosis, currentRecordId, formDataChanged]);
 
   /* ── Reset ── */
   const handleReset = useCallback(() => {
@@ -520,6 +555,8 @@ function App() {
     setRevealed(false);
     setSelectedFormData(null);
     setCurrentRecordId(null);
+    setSavedFormHash('');
+    setGeneratedAt(null);
     setSwotData(null);
     setIsMenteeView(false);
     setScreen('source');
@@ -630,7 +667,35 @@ function App() {
                       fontFamily: "var(--font-pixel)", fontSize: 9, color: '#0A0A0A', boxShadow: '2px 2px 0 #0A0A0A',
                     }}>NOVO DIAGNÓSTICO</button>
                   )}
+                  {!isMenteeView && currentRecordId && (
+                    <button onClick={handleRegenerate} className="no-print" style={{
+                      background: '#ED028A', border: '2px solid #0A0A0A', padding: '3px 10px', cursor: 'pointer',
+                      fontFamily: "var(--font-pixel)", fontSize: 9, color: '#FFF9D5', boxShadow: '2px 2px 0 #0A0A0A',
+                    }}>REGERAR COM IA</button>
+                  )}
+                  {!isMenteeView && generatedAt && (
+                    <span style={{
+                      fontFamily: "var(--font-pixel)", fontSize: 9, color: '#0A0A0A', opacity: 0.5,
+                    }} className="no-print">
+                      gerado em {new Date(generatedAt).toLocaleDateString('pt-BR')} {new Date(generatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  )}
                 </div>
+                {!isMenteeView && formDataChanged && (
+                  <div className="no-print" style={{
+                    background: '#FFF9D5', border: '2px solid #ED028A', padding: '10px 14px', marginBottom: 12,
+                    display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+                  }}>
+                    <span style={{ fontFamily: "var(--font-pixel)", fontSize: 9, color: '#ED028A', fontWeight: 700 }}>⚠ FORM ATUALIZADO</span>
+                    <span style={{ fontFamily: "var(--font-body)", fontSize: 13, color: '#0A0A0A', flex: 1, minWidth: 200 }}>
+                      O mentorado editou o formulário depois do diagnóstico. As respostas atuais não batem com o que foi analisado.
+                    </span>
+                    <button onClick={handleRegenerate} style={{
+                      background: '#ED028A', border: 'none', padding: '6px 14px', cursor: 'pointer', color: '#FFF9D5',
+                      fontFamily: "var(--font-pixel)", fontSize: 10, fontWeight: 700,
+                    }}>REGERAR AGORA</button>
+                  </div>
+                )}
                 <h1 style={{
                   fontFamily: "var(--font-display)", fontSize: 'clamp(48px, 8vw, 100px)',
                   lineHeight: 0.9, letterSpacing: '-0.02em', color: '#0A0A0A', textTransform: 'uppercase',
