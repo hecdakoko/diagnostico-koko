@@ -306,6 +306,84 @@ function DownloadPDFButton() {
 }
 
 /* ══════════════════════════════════════════════════
+   LOGIN GATE — bloqueia mentor view antes de qualquer fetch
+   ══════════════════════════════════════════════════ */
+
+function LoginGate({ verifyAdminPassword, onSuccess }) {
+  const [pw, setPw] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    if (e) e.preventDefault();
+    if (!pw.trim()) return;
+    setLoading(true);
+    setError('');
+    const ok = await verifyAdminPassword(pw.trim());
+    setLoading(false);
+    if (ok) {
+      try { localStorage.setItem('__koko_admin_pw', pw.trim()); } catch {}
+      onSuccess();
+    } else {
+      setError('Senha incorreta');
+      setPw('');
+    }
+  };
+
+  return (
+    <section style={{
+      padding: '80px 32px', maxWidth: 480, margin: '0 auto', width: '100%',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, flex: 1, justifyContent: 'center',
+    }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ display: 'inline-block', background: '#0A0A0A', padding: '4px 12px', marginBottom: 12 }}>
+          <span style={{ fontFamily: "var(--font-pixel)", fontSize: 10, color: '#FFF9D5' }}>ACESSO RESTRITO</span>
+        </div>
+        <h1 style={{ fontFamily: "var(--font-display)", fontSize: 'clamp(28px, 5vw, 48px)', lineHeight: 0.95, color: '#0A0A0A' }}>
+          MENTOR LOGIN
+        </h1>
+        <p style={{ fontFamily: "var(--font-body)", fontSize: 14, color: '#0A0A0A', opacity: 0.6, marginTop: 12 }}>
+          Esta área é restrita aos mentores da Koko. Mentorados acessam pelo link individual.
+        </p>
+      </div>
+      <form onSubmit={handleSubmit} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <input
+          type="password"
+          value={pw}
+          onChange={e => setPw(e.target.value)}
+          placeholder="senha de admin"
+          autoFocus
+          disabled={loading}
+          style={{
+            padding: '14px 16px',
+            fontFamily: "var(--font-body)", fontSize: 15,
+            background: '#FFF9D5', color: '#0A0A0A',
+            border: '2px solid #0A0A0A', outline: 'none',
+          }}
+        />
+        {error && (
+          <div style={{
+            padding: '10px 14px', background: '#ED028A', color: '#FFF9D5',
+            fontFamily: "var(--font-body)", fontSize: 13, fontWeight: 600,
+          }}>{error}</div>
+        )}
+        <button
+          type="submit"
+          disabled={loading || !pw.trim()}
+          style={{
+            padding: '14px 24px',
+            background: loading ? '#666' : '#003B1F', color: '#FFF9D5',
+            border: 'none', cursor: loading ? 'wait' : 'pointer',
+            fontFamily: "var(--font-display)", fontSize: 18, letterSpacing: 1,
+            opacity: !pw.trim() ? 0.4 : 1,
+          }}
+        >{loading ? 'VERIFICANDO...' : 'ENTRAR'}</button>
+      </form>
+    </section>
+  );
+}
+
+/* ══════════════════════════════════════════════════
    MAIN APP
    ══════════════════════════════════════════════════ */
 
@@ -318,6 +396,22 @@ function App() {
   const [currentRecordId, setCurrentRecordId] = useState(null);
   const [swotData, setSwotData] = useState(null);
   const [isMenteeView, setIsMenteeView] = useState(false);
+
+  /* ── Admin auth gate (mentor view only) ── */
+  const verifyAdminPassword = useCallback(async (pw) => {
+    if (!pw) return false;
+    try {
+      const r = await fetch('/api/verify', {
+        method: 'POST',
+        headers: { 'x-admin-password': pw },
+      });
+      return r.ok;
+    } catch { return false; }
+  }, []);
+
+  const handleLoginSuccess = useCallback(() => {
+    setScreen('source');
+  }, []);
 
   /* ── URL-based routing ── */
   useEffect(() => {
@@ -351,12 +445,26 @@ function App() {
             setScreen('waiting');
           }
         }
-      }).catch(() => setScreen('source'));
+      }).catch(() => setScreen('login')); /* fallback seguro: NUNCA cair em 'source' (vazaria a lista) */
     } else {
       setIsMenteeView(false);
-      setScreen('source');
+      /* Mentor view: exige senha de admin antes de QUALQUER fetch ou render */
+      let cached = '';
+      try { cached = localStorage.getItem('__koko_admin_pw') || ''; } catch {}
+      if (!cached) {
+        setScreen('login');
+        return;
+      }
+      verifyAdminPassword(cached).then(ok => {
+        if (ok) {
+          setScreen('source');
+        } else {
+          try { localStorage.removeItem('__koko_admin_pw'); } catch {}
+          setScreen('login');
+        }
+      });
     }
-  }, []);
+  }, [verifyAdminPassword]);
 
   const handleReveal = useCallback(() => setRevealed(true), []);
 
@@ -442,6 +550,11 @@ function App() {
         <section style={{ padding: '80px 32px', textAlign: 'center', maxWidth: 1200, margin: '0 auto', width: '100%' }}>
           <div style={{ fontFamily: "var(--font-display)", fontSize: 32, color: '#0A0A0A' }}>CARREGANDO DIAGNÓSTICO...</div>
         </section>
+      )}
+
+      {/* ═══ LOGIN (mentor) ═══ */}
+      {screen === 'login' && (
+        <LoginGate verifyAdminPassword={verifyAdminPassword} onSuccess={handleLoginSuccess} />
       )}
 
       {/* ═══ WAITING (mentee, no diagnosis yet) ═══ */}
